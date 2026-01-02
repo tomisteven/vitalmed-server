@@ -9,9 +9,7 @@ const PacienteSchema = new Schema({
   edad: String,
   email: String,
   dni: {
-    type: String,
-    required: true,
-    unique: true,
+    type: String
   },
   password: {
     type: String,

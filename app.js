@@ -7,6 +7,8 @@ const sistema = require("./Routes/sistema.route");
 const paciente = require("./Routes/Paciente.router");
 const doctores = require("./Routes/doctor.router");
 const secretaria = require("./Routes/Secretaria.router");
+const turnos = require("./Routes/Turno.router");
+const estudios = require("./Routes/Estudio.router");
 
 const app = express();
 const dotenv = require("dotenv");
@@ -26,6 +28,8 @@ app.use(express.static(__dirname + "/uploads"));
 app.use("/api", paciente);
 app.use("/api", doctores);
 app.use("/api", secretaria);
+app.use("/api", turnos);
+app.use("/api", estudios);
 app.use("/auth", sistema);
 
 module.exports = app;

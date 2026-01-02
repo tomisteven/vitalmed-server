@@ -4,7 +4,6 @@ const Schema = mongoose.Schema;
 const SecretariaSchema = new Schema({
   nombre: { type: String, required: true },
   usuario: String,
-  email: String,
   password: {
     type: String,
     required: true,

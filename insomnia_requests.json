@@ -1,0 +1,65 @@
+[
+  {
+    "name": "1. Crear Disponibilidad (Admin/Secretaria)",
+    "description": "Crea turnos disponibles para un doctor en fechas y horas específicas.",
+    "method": "POST",
+    "url": "{{base_url}}/api/turnos/disponibilidad",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "doctorId": "ID_DEL_DOCTOR_AQUI",
+      "horarios": [
+        "2023-12-01T09:00:00.000Z",
+        "2023-12-01T09:30:00.000Z",
+        "2023-12-01T10:00:00.000Z"
+      ]
+    }
+  },
+  {
+    "name": "2. Obtener Turnos Disponibles",
+    "description": "Busca turnos con filtros. Puedes filtrar por doctorId, especialidad, fecha (YYYY-MM-DD) o estado.",
+    "method": "GET",
+    "url": "{{base_url}}/api/turnos?estado=disponible&fecha=2023-12-01",
+    "headers": {},
+    "examples": [
+      "{{base_url}}/api/turnos?estado=disponible",
+      "{{base_url}}/api/turnos?especialidad=Cardiologia",
+      "{{base_url}}/api/turnos?doctorId=ID_DEL_DOCTOR&fecha=2023-12-01"
+    ]
+  },
+  {
+    "name": "3. Reservar Turno (Paciente)",
+    "description": "Reserva un turno específico. Requiere el ID del turno en la URL.",
+    "method": "POST",
+    "url": "{{base_url}}/api/turnos/reservar/ID_DEL_TURNO_AQUI",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "pacienteId": "ID_DEL_PACIENTE_AQUI",
+      "motivoConsulta": "Consulta general, dolor de cabeza"
+    }
+  },
+  {
+    "name": "4. Obtener Mis Turnos (Paciente)",
+    "description": "Obtiene el historial de turnos de un paciente.",
+    "method": "GET",
+    "url": "{{base_url}}/api/turnos/mis-turnos/ID_DEL_PACIENTE_AQUI",
+    "headers": {}
+  },
+  {
+    "name": "5. Cancelar Turno",
+    "description": "Cancela un turno reservado. IMPORTANTE: El turno vuelve a estar DISPONIBLE para que otro paciente lo reserve.",
+    "method": "PUT",
+    "url": "{{base_url}}/api/turnos/cancelar/ID_DEL_TURNO_AQUI",
+    "headers": {
+      "Content-Type": "application/json"
+    },
+    "body": {
+      "motivo": "No puedo asistir"
+    },
+    "note": "Al cancelar, el turno se libera automáticamente (estado: 'disponible', paciente: null) y queda disponible para que otra persona lo reserve."
+  }
+]
+

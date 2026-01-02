@@ -12,55 +12,6 @@ const {
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
 const fs = require("fs");
 
-const keys = [
-  "a",
-  "b",
-  "c",
-  "d",
-  "e",
-  "f",
-  "g",
-  "h",
-  "i",
-  "j",
-  "k",
-  "l",
-  "m",
-  "n",
-  "o",
-  "p",
-  "q",
-  "r",
-  "s",
-  "t",
-  "u",
-  "v",
-  "w",
-  "x",
-  "y",
-  "z",
-  "0",
-  "1",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-];
-const randomKey = () => {
-  const key = ""
-    .concat(
-      ...Array(10)
-        .fill()
-        .map(() => keys[Math.floor(Math.random() * keys.length)])
-    )
-    .toString();
-  return key;
-};
-
 const getSecretarias = async (req, res) => {
   try {
     const secretarias = await Secretaria.find();
@@ -189,11 +140,7 @@ const subirDocumentoAPaciente2 = async (req, res) => {
         .toLowerCase()
         .replace(/[^a-z0-9.-]/g, "-");
 
-      const uniqueFilename = `${Date.now()}-${originalFilename}-${Math.floor(
-        Math.random() * 1000
-      )}${extension}-${randomKey()}`;
-      console.log("Unique Filename:", uniqueFilename);
-
+      const uniqueFilename = `${Date.now()}-${originalFilename}`;
       const urlArchivo = `https://${bucket}.s3.${miRegion}.amazonaws.com/${uniqueFilename}`;
 
       let fileBuffer = await fs.promises.readFile(file.path);
@@ -221,11 +168,9 @@ const subirDocumentoAPaciente2 = async (req, res) => {
 
       try {
         const subida = await s3.send(new PutObjectCommand(params));
-        console.log("Subida exitosa:", subida);
-        console.log("URL del archivo:", urlArchivo);
 
         paciente.documentos.push({
-          urlArchivo: `${urlArchivo}?versionId=${subida.VersionId}`,
+          urlArchivo,
           idArchivo: subida.$metadata.requestId,
           nombreArchivo,
           originalFilename,

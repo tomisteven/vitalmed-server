@@ -4,6 +4,7 @@ const { asureAuth } = require("../middlewares/authenticated");
 const {
   getPacientes,
   getPaciente,
+  getPacientesShort,
   createPaciente,
   deletePaciente,
   updatePaciente,
@@ -20,6 +21,7 @@ const app = Router();
 // Paciente Controller
 
 app.get("/pacientes", asureAuth, getPacientes);
+app.get("/pacientes/short", asureAuth, getPacientesShort);
 app.get("/paciente/:id", asureAuth, getPaciente);
 app.post("/paciente", asureAuth, createPaciente);
 app.get("/paciente/:id/doctores", asureAuth, getDoctoresAsignados);

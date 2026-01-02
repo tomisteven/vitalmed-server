@@ -214,7 +214,7 @@ const getPaciente = async (req, res) => {
     const paciente = await Paciente.findById(req.params.id).populate(
       "doctoresAsignados"
     );
-if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ ok: false, message: "ID inválido" });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ ok: false, message: "ID inválido" });
 
 
     // Agrupar documentos por nombre de archivo
@@ -240,7 +240,7 @@ if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json
 
     // Devolver los documentos agrupados
     if (!paciente) {
-      return res.status(404).json({ message: "Paciente no encontrado", ok:false });
+      return res.status(404).json({ message: "Paciente no encontrado", ok: false });
     }
 
     res.json({
@@ -251,7 +251,7 @@ if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json
       ok: true,
     });
   } catch (error) {
-    res.status(500).json({ message: error.message, ok:false });
+    res.status(500).json({ message: error.message, ok: false });
   }
 };
 
@@ -329,6 +329,15 @@ async function getDocumentsGroupedByName(req, res) {
   }
 }
 
+const getPacientesShort = async (req, res) => {
+  try {
+    const pacientes = await Paciente.find().select("nombre dni");
+    res.json(pacientes);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+};
+
 module.exports = {
   getPacientes,
   getPaciente,
@@ -341,4 +350,5 @@ module.exports = {
   agregarNotasAlPaciente,
   eliminarDoctorDePaciente,
   eliminarNotasDelPaciente,
+  getPacientesShort,
 };
