@@ -1,5 +1,3 @@
-const { id } = require("@hapi/joi/lib/base");
-const { type } = require("@hapi/joi/lib/extend");
 const mongoose = require("mongoose");
 const Schema = mongoose.Schema;
 
@@ -7,6 +5,7 @@ const PacienteSchema = new Schema({
   nombre: { type: String, required: true },
   usuario: String,
   edad: String,
+  fechaNacimiento: Date,
   email: String,
   dni: {
     type: String
@@ -28,7 +27,7 @@ const PacienteSchema = new Schema({
     {
       fecha: { type: Date, default: Date.now },
       nota: String,
-      author : String
+      author: String
     },
   ],
   doctoresAsignados: [
@@ -43,6 +42,8 @@ const PacienteSchema = new Schema({
   direccion: String,
   localidad: String,
   provincia: String,
+  nacimiento: Date,
+
   pais: String,
   estado: String,
   motivoBaja: String,

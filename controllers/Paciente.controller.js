@@ -1,5 +1,6 @@
 const Doctor = require("../models/Doctor");
 const Paciente = require("../models/Paciente");
+const Turno = require("../models/Turno");
 const mongoose = require("mongoose");
 
 const getPacientes = async (req, res) => {
@@ -211,11 +212,23 @@ const getDoctoresAsignados = async (req, res) => {
 
 const getPaciente = async (req, res) => {
   try {
-    const paciente = await Paciente.findById(req.params.id).populate(
-      "doctoresAsignados"
-    );
-    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ ok: false, message: "ID inválido" });
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ ok: false, message: "ID inválido" });
+    }
 
+    const paciente = await Paciente.findById(req.params.id).populate(
+      "doctoresAsignados", "nombre"
+    );
+
+    if (!paciente) {
+      return res.status(404).json({ message: "Paciente no encontrado", ok: false });
+    }
+
+    // Buscar turnos asignados al paciente
+    const turnosAsignados = await Turno.find({ paciente: req.params.id })
+      .populate("doctor", "nombre especialidad telefono email")
+      .populate("estudio", "tipo precio aclaraciones")
+      .sort({ fecha: 1 });
 
     // Agrupar documentos por nombre de archivo
     const documents = paciente.documentos.reduce((acc, documento) => {
@@ -238,15 +251,11 @@ const getPaciente = async (req, res) => {
       return acc;
     }, []);
 
-    // Devolver los documentos agrupados
-    if (!paciente) {
-      return res.status(404).json({ message: "Paciente no encontrado", ok: false });
-    }
-
     res.json({
       paciente,
       documentosAgrupados: documents,
       doctoresAsignados: paciente.doctoresAsignados,
+      turnosAsignados: turnosAsignados,
       message: "Paciente encontrado",
       ok: true,
     });

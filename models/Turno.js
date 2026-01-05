@@ -13,6 +13,23 @@ const TurnoSchema = new Schema({
     ref: "Paciente",
     default: null,
   },
+  // Para pacientes no registrados (invitados)
+  pacienteNoRegistrado: {
+    dni: { type: String },
+    nombre: { type: String },
+    telefono: { type: String },
+  },
+  // Archivos adjuntos (imágenes/PDF subidos a S3)
+  archivosAdjuntos: [
+    {
+      urlArchivo: { type: String },
+      nombreArchivo: { type: String },
+      originalFilename: { type: String },
+      idArchivo: { type: String },
+      tipoArchivo: { type: String }, // 'image' | 'pdf'
+      fechaSubida: { type: Date, default: Date.now },
+    },
+  ],
   estudio: {
     type: Schema.Types.ObjectId,
     ref: "Estudio",
