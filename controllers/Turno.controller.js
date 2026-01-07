@@ -324,26 +324,25 @@ exports.obtenerTurnos = async (req, res) => {
         const { doctorId, especialidad, fecha, estado } = req.query;
         const filter = {};
 
+        console.log("Query params:", req.query);
+
         if (doctorId) filter.doctor = doctorId;
         if (especialidad) filter.especialidad = especialidad;
         if (estado) filter.estado = estado;
 
         // Filtro por fecha (día específico)
+        // Filtro por fecha (día específico)
         if (fecha) {
-            const start = new Date(fecha);
+            const [anio, mes, dia] = fecha.split('-');
+            const start = new Date(anio, mes - 1, dia);
             start.setHours(0, 0, 0, 0);
-            const end = new Date(fecha);
+            const end = new Date(anio, mes - 1, dia);
             end.setHours(23, 59, 59, 999);
             filter.fecha = { $gte: start, $lte: end };
-        }
-
-        // Filtrar turnos que ya pasaron (solo mostrar futuros)
-        // Si no se especificó un filtro de fecha, agregar filtro de fecha futura
-        if (!filter.fecha) {
-            filter.fecha = { $gte: new Date() };
         } else {
-            // Si ya hay filtro de fecha, asegurarse que también sea >= ahora
-            filter.fecha.$gte = new Date();
+            // Filtrar turnos que ya pasaron (solo mostrar futuros)
+            // Si no se especificó un filtro de fecha, agregar filtro de fecha futura
+            filter.fecha = { $gte: new Date() };
         }
 
         const turnos = await Turno.find(filter)
@@ -351,7 +350,7 @@ exports.obtenerTurnos = async (req, res) => {
             .populate("paciente", "nombre email")
             .populate("estudio", "tipo precio aclaraciones")
             .sort({ fecha: 1 });
-        console.log(turnos);
+        //console.log(turnos);
         res.status(200).send(turnos);
     } catch (error) {
         console.error(error);
