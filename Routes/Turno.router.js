@@ -36,6 +36,12 @@ router.get("/turnos/mis-turnos/:pacienteId", TurnoController.obtenerMisTurnos);
 // Borrar turno (Admin/Secretaria)
 router.delete("/turnos/:turnoId", TurnoController.borrarTurno);
 
+// Eliminar turnos masivos (Admin/Secretaria)
+router.delete("/turnos-masivo", TurnoController.borrarTurnosMasivo);
+
+// Limpiar/Vaciar turnos masivos (Admin/Secretaria)
+router.put("/turnos-masivo/limpiar", TurnoController.limpiarTurnosMasivo);
+
 // Actualizar turno (cualquier campo)
 router.patch("/turnos/:turnoId", TurnoController.actualizarTurno);
 

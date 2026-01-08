@@ -454,3 +454,80 @@ exports.actualizarTurno = async (req, res) => {
         res.status(500).send({ message: "Error al actualizar turno." });
     }
 };
+
+// Eliminar turnos masivos (Admin/Secretaria)
+// Recibe un array de ids en el body: { ids: ["id1", "id2", ...] }
+exports.borrarTurnosMasivo = async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).send({ message: "Debe proporcionar un array de IDs." });
+        }
+
+        // Primero buscamos los turnos para verificar si tienen archivos en S3
+        const turnos = await Turno.find({ _id: { $in: ids } });
+
+        for (const turno of turnos) {
+            // Eliminar archivos adjuntos de S3 si existen
+            if (turno.archivosAdjuntos && turno.archivosAdjuntos.length > 0) {
+                for (const archivo of turno.archivosAdjuntos) {
+                    try {
+                        const params = {
+                            Bucket: BUCKET_NAME,
+                            Key: archivo.originalFilename,
+                        };
+                        await s3.send(new DeleteObjectCommand(params));
+                    } catch (err) {
+                        console.error(`Error al eliminar archivo ${archivo.originalFilename} de S3:`, err.message);
+                    }
+                }
+            }
+        }
+
+        const resultado = await Turno.deleteMany({ _id: { $in: ids } });
+
+        res.status(200).send({
+            message: `${resultado.deletedCount} turnos eliminados correctamente.`,
+            resultado
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Error al eliminar turnos masivamente." });
+    }
+};
+
+// Limpiar/Vaciar turnos masivos (Admin/Secretaria)
+// Vuelve los turnos al estado "disponible" y limpia datos del paciente
+// Recibe un array de ids en el body: { ids: ["id1", "id2", ...] }
+exports.limpiarTurnosMasivo = async (req, res) => {
+    try {
+        const { ids } = req.body;
+
+        if (!ids || !Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).send({ message: "Debe proporcionar un array de IDs." });
+        }
+
+        const resultado = await Turno.updateMany(
+            { _id: { $in: ids } },
+            {
+                $set: {
+                    estado: "disponible",
+                    paciente: null,
+                    pacienteNoRegistrado: null,
+                    motivoConsulta: null,
+                    estudio: null,
+                    updated_at: Date.now()
+                }
+            }
+        );
+
+        res.status(200).send({
+            message: `${resultado.modifiedCount} turnos limpiados correctamente.`,
+            resultado
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Error al limpiar turnos masivamente." });
+    }
+};

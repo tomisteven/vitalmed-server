@@ -93,7 +93,7 @@ const getDashboardStats = async (req, res) => {
       Turno.countDocuments({ estado: "cancelado" }),
       Turno.countDocuments({ estado: "finalizado" }),
       Turno.countDocuments({
-        fecha: { $gte: hoy, $lt: new Date(hoy.getTime() + 24 * 60 * 60 * 1000) }
+        fecha: { $gte: ahora, $lt: new Date(hoy.getTime() + 24 * 60 * 60 * 1000) }
       }),
       Turno.countDocuments({ fecha: { $gte: inicioSemana } }),
       Turno.countDocuments({ fecha: { $gte: inicioMes } }),
@@ -102,7 +102,7 @@ const getDashboardStats = async (req, res) => {
 
     // TURNOS RESERVADOS PARA ESTA SEMANA (con todos los datos para secretarias)
     const turnosReservadosSemanaActual = await Turno.find({
-      fecha: { $gte: inicioSemana, $lt: finSemana },
+      fecha: { $gte: hoy, $lt: finSemana },
       estado: "reservado"
     })
       .populate("doctor", "nombre especialidad telefono email")
