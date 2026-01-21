@@ -24,6 +24,17 @@ app.use(cors());
 // Servir archivos estáticos
 app.use(express.static(__dirname + "/uploads"));
 
+// Health check endpoint
+app.get("/health", (req, res) => {
+    res.status(200).json({
+        status: "OK",
+        message: "Servidor corriendo perfectamente",
+        timestamp: new Date().toISOString(),
+        uptime: process.uptime(),
+        memoryUsage: process.memoryUsage()
+    });
+});
+
 // Rutas
 app.use("/api", paciente);
 app.use("/api", doctores);
