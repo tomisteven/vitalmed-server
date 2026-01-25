@@ -31,7 +31,9 @@ const BUCKET_NAME = "dicom-medical";
 
 exports.crearDisponibilidad = async (req, res) => {
     try {
-        const { doctorId, horarios, estudioId } = req.body; // horarios es un array de ISO Dates
+        const { doctorId, horarios } = req.body; // horarios es un array de ISO Dates
+        // Nota: El estudio ya NO se especifica al crear el turno.
+        // El paciente elegirá el estudio al momento de reservar.
 
         if (!doctorId || !horarios || !Array.isArray(horarios)) {
             return res.status(400).send({ message: "Datos faltantes o incorrectos." });
@@ -48,7 +50,7 @@ exports.crearDisponibilidad = async (req, res) => {
                 fecha: new Date(fecha),
                 doctor: doctorId,
                 especialidad: doctor.especialidad,
-                estudio: estudioId,
+                // estudio: null - El estudio se asignará al reservar
                 estado: "disponible",
             });
             await nuevoTurno.save();
@@ -68,6 +70,15 @@ exports.reservarTurno = async (req, res) => {
         const { turnoId } = req.params;
         const { pacienteId, motivoConsulta, estudioId } = req.body;
 
+        // Validar que se especifique el estudio (obligatorio al reservar)
+        if (!estudioId) {
+            return res.status(400).send({ message: "Debe seleccionar un estudio para reservar el turno." });
+        }
+
+        if (!pacienteId) {
+            return res.status(400).send({ message: "Se requiere el ID del paciente." });
+        }
+
         const turno = await Turno.findById(turnoId);
         if (!turno) {
             return res.status(404).send({ message: "Turno no encontrado." });
@@ -86,7 +97,7 @@ exports.reservarTurno = async (req, res) => {
         turno.estado = "reservado";
         turno.motivoConsulta = motivoConsulta;
         turno.updated_at = Date.now();
-        turno.estudio = estudioId;
+        turno.estudio = estudioId; // El estudio lo elige el paciente al reservar
 
         await turno.save();
 
@@ -107,7 +118,14 @@ exports.reservarTurnoInvitado = async (req, res) => {
         const { turnoId } = req.params;
         const { dni, nombre, telefono, motivoConsulta, estudioId } = req.body;
 
-        // Validar datos obligatorios
+        // Validar que se especifique el estudio (obligatorio al reservar)
+        if (!estudioId) {
+            return res.status(400).send({
+                message: "Debe seleccionar un estudio para reservar el turno."
+            });
+        }
+
+        // Validar datos obligatorios del invitado
         if (!dni || !nombre || !telefono) {
             return res.status(400).send({
                 message: "Datos faltantes. Se requiere: dni, nombre y telefono."
@@ -132,7 +150,7 @@ exports.reservarTurnoInvitado = async (req, res) => {
         turno.estado = "reservado";
         turno.motivoConsulta = motivoConsulta;
         turno.updated_at = Date.now();
-        turno.estudio = estudioId;
+        turno.estudio = estudioId; // El estudio lo elige el paciente al reservar
 
         await turno.save();
 
@@ -339,10 +357,6 @@ exports.obtenerTurnos = async (req, res) => {
             const end = new Date(anio, mes - 1, dia);
             end.setHours(23, 59, 59, 999);
             filter.fecha = { $gte: start, $lte: end };
-        } else {
-            // Filtrar turnos que ya pasaron (solo mostrar futuros)
-            // Si no se especificó un filtro de fecha, agregar filtro de fecha futura
-            filter.fecha = { $gte: new Date() };
         }
 
         const turnos = await Turno.find(filter)
