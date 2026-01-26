@@ -74,7 +74,7 @@ const getDashboardStats = async (req, res) => {
       Doctor.countDocuments(),
       Secretaria.countDocuments(),
       Estudio.countDocuments(),
-      Turno.countDocuments()
+      Turno.countDocuments({ fecha: { $gte: ahora } })
     ]);
 
     // ==================== ESTADÍSTICAS DE TURNOS ====================
@@ -88,8 +88,8 @@ const getDashboardStats = async (req, res) => {
       turnosMes,
       turnosFuturos
     ] = await Promise.all([
-      Turno.countDocuments({ estado: "disponible" }),
-      Turno.countDocuments({ estado: "reservado" }),
+      Turno.countDocuments({ estado: "disponible", fecha: { $gte: ahora } }),
+      Turno.countDocuments({ estado: "reservado", fecha: { $gte: ahora } }),
       Turno.countDocuments({ estado: "cancelado" }),
       Turno.countDocuments({ estado: "finalizado" }),
       Turno.countDocuments({

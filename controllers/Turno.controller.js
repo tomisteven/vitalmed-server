@@ -357,6 +357,8 @@ exports.obtenerTurnos = async (req, res) => {
             const end = new Date(anio, mes - 1, dia);
             end.setHours(23, 59, 59, 999);
             filter.fecha = { $gte: start, $lte: end };
+        } else {
+            filter.fecha = { $gte: new Date() };
         }
 
         const turnos = await Turno.find(filter)
