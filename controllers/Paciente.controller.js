@@ -77,6 +77,37 @@ const eliminarNotasDelPaciente = async (req, res) => {
   }
 };
 
+const editarNotaDelPaciente = async (req, res) => {
+  try {
+    const { id } = req.params; // ID del paciente
+    const { idNota, nota } = req.body; // ID de la nota y nuevo texto
+
+    if (!idNota || !nota) {
+      return res.status(400).json({ message: "Faltan datos", ok: false });
+    }
+
+    const paciente = await Paciente.findById(id);
+
+    if (!paciente) {
+      return res.status(404).json({ message: "Paciente no encontrado", ok: false });
+    }
+
+    const notaObj = paciente.notas.id(idNota);
+
+    if (!notaObj) {
+      return res.status(404).json({ message: "Nota no encontrada", ok: false });
+    }
+
+    notaObj.nota = nota;
+
+    await paciente.save();
+
+    res.json({ message: "Nota editada correctamente", ok: true });
+  } catch (error) {
+    res.status(500).json({ message: error.message, ok: false });
+  }
+};
+
 const agregarNotasAlPaciente = async (req, res) => {
   try {
     const { id } = req.params; // ID del paciente desde los parámetros de la URL
@@ -357,6 +388,7 @@ module.exports = {
   getDoctoresAsignados,
   asignarDoctorAPaciente,
   agregarNotasAlPaciente,
+  editarNotaDelPaciente,
   eliminarDoctorDePaciente,
   eliminarNotasDelPaciente,
   getPacientesShort,

@@ -12,6 +12,7 @@ const {
   getDoctoresAsignados,
   asignarDoctorAPaciente,
   agregarNotasAlPaciente,
+  editarNotaDelPaciente,
   eliminarNotasDelPaciente,
   eliminarDoctorDePaciente,
 } = require("../controllers/Paciente.controller.js");
@@ -30,6 +31,7 @@ app.post("/paciente/:id/asignar-doctor", asureAuth, asignarDoctorAPaciente);
 app.delete("/paciente/:id", asureAuth, deletePaciente);
 app.get("/paciente/:id/documentos", asureAuth, getDocumentsGroupedByName);
 app.post("/paciente/:id/agregar-nota", asureAuth, agregarNotasAlPaciente);
+app.patch("/paciente/:id/editar-nota", asureAuth, editarNotaDelPaciente);
 
 app.delete("/paciente/:id/eliminar-nota", asureAuth, eliminarNotasDelPaciente);
 app.delete(
