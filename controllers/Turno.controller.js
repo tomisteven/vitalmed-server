@@ -4,6 +4,7 @@ const Paciente = require("../models/Paciente");
 const { enviarCorreoConfirmacion } = require("../utils/emailService");
 const path = require("path");
 const mime = require("mime-types");
+const HistorialTurno = require("../models/HistorialTurno");
 const fs = require("fs");
 
 const {
@@ -68,7 +69,7 @@ exports.crearDisponibilidad = async (req, res) => {
 exports.reservarTurno = async (req, res) => {
     try {
         const { turnoId } = req.params;
-        const { pacienteId, motivoConsulta, estudioId } = req.body;
+        const { pacienteId, motivoConsulta, estudioId, telefono } = req.body;
 
         // Validar que se especifique el estudio (obligatorio al reservar)
         if (!estudioId) {
@@ -77,6 +78,10 @@ exports.reservarTurno = async (req, res) => {
 
         if (!pacienteId) {
             return res.status(400).send({ message: "Se requiere el ID del paciente." });
+        }
+
+        if (!telefono) {
+            return res.status(400).send({ message: "El teléfono es obligatorio para registrar el turno." });
         }
 
         const turno = await Turno.findById(turnoId);
@@ -93,6 +98,12 @@ exports.reservarTurno = async (req, res) => {
             return res.status(404).send({ message: "Paciente no encontrado." });
         }
 
+        // Actualizar el teléfono del paciente si se proveyó uno nuevo
+        if (telefono && paciente.telefono !== telefono) {
+            paciente.telefono = telefono;
+            await paciente.save();
+        }
+
         turno.paciente = pacienteId;
         turno.estado = "reservado";
         turno.motivoConsulta = motivoConsulta;
@@ -100,6 +111,22 @@ exports.reservarTurno = async (req, res) => {
         turno.estudio = estudioId; // El estudio lo elige el paciente al reservar
 
         await turno.save();
+
+        const doctor = await Doctor.findById(turno.doctor);
+
+        // Guardar en el Historial
+        const historial = new HistorialTurno({
+            turnoId: turno._id,
+            pacienteId: paciente._id,
+            nombreCompleto: paciente.nombre,
+            telefono: telefono || paciente.telefono,
+            dni: paciente.dni || "",
+            doctor: doctor ? doctor.nombre : "Desconocido",
+            especialidad: turno.especialidad || (doctor ? doctor.especialidad : "Desconocida"),
+            fechaTurno: turno.fecha,
+            creadoPor: "paciente_registrado"
+        });
+        await historial.save();
 
         // Enviar email
         await enviarCorreoConfirmacion(turno, paciente);
@@ -153,6 +180,21 @@ exports.reservarTurnoInvitado = async (req, res) => {
         turno.estudio = estudioId; // El estudio lo elige el paciente al reservar
 
         await turno.save();
+
+        const doctor = await Doctor.findById(turno.doctor);
+
+        // Guardar en el Historial
+        const historial = new HistorialTurno({
+            turnoId: turno._id,
+            nombreCompleto: nombre.trim(),
+            telefono: telefono.trim(),
+            dni: dni.trim(),
+            doctor: doctor ? doctor.nombre : "Desconocido",
+            especialidad: turno.especialidad || (doctor ? doctor.especialidad : "Desconocida"),
+            fechaTurno: turno.fecha,
+            creadoPor: "paciente_invitado" // Se usa invitado para Admin también, ya que asigan como invitado a veces.
+        });
+        await historial.save();
 
         // Nota: No se envía email ya que no tenemos el email del invitado
         // Si se desea, se puede agregar campo email opcional
