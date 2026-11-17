@@ -135,7 +135,13 @@ const agregarNotasAlPaciente = async (req, res) => {
 
 const updatePaciente = async (req, res) => {
   try {
-    await Paciente.findOneAndUpdate({ _id: req.params.id }, req.body, {
+    const datos = { ...req.body };
+
+    if (!String(datos.password || "").trim()) {
+      delete datos.password;
+    }
+
+    await Paciente.findOneAndUpdate({ _id: req.params.id }, datos, {
       includeResultMetadata: true,
     });
     res.json({ message: "Paciente actualizado", ok: true });

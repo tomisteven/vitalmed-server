@@ -1,7 +1,12 @@
 const Turno = require("../models/Turno");
 const Doctor = require("../models/Doctor");
 const Paciente = require("../models/Paciente");
-const { enviarCorreoConfirmacion } = require("../utils/emailService");
+const {
+    enviarCorreoConfirmacion,
+    enviarCorreoInformeListo,
+} = require("../utils/emailService");
+const { getEmailConfig } = require("../utils/emailConfig");
+const { prepararAdjuntos, esPdf } = require("../utils/archivosAdjuntos");
 const path = require("path");
 const mime = require("mime-types");
 const HistorialTurno = require("../models/HistorialTurno");
@@ -23,6 +28,13 @@ const s3 = new S3Client({
     },
 });
 const BUCKET_NAME = "dicom-medical";
+
+const ESTADOS_ATENCION = [
+    "agendado",
+    "en_consulta",
+    "pendiente_informe",
+    "informe_completado",
+];
 
 // Crear disponibilidad (Admin/Secretaria)
 // Recibe: doctorId, fecha (Date), horaInicio (HH:mm), horaFin (HH:mm), intervalo (minutos)
@@ -109,6 +121,10 @@ exports.reservarTurno = async (req, res) => {
         turno.motivoConsulta = motivoConsulta;
         turno.updated_at = Date.now();
         turno.estudio = estudioId; // El estudio lo elige el paciente al reservar
+        turno.estadoAtencion = "agendado";
+        turno.enConsultaAt = null;
+        turno.pendienteInformeAt = null;
+        turno.informeCompletadoAt = null;
 
         await turno.save();
 
@@ -178,6 +194,10 @@ exports.reservarTurnoInvitado = async (req, res) => {
         turno.motivoConsulta = motivoConsulta;
         turno.updated_at = Date.now();
         turno.estudio = estudioId; // El estudio lo elige el paciente al reservar
+        turno.estadoAtencion = "agendado";
+        turno.enConsultaAt = null;
+        turno.pendienteInformeAt = null;
+        turno.informeCompletadoAt = null;
 
         await turno.save();
 
@@ -363,6 +383,10 @@ exports.cancelarTurno = async (req, res) => {
         turno.pacienteNoRegistrado = null; // Limpiar datos de invitado
         turno.motivoConsulta = null; // Limpiar motivo de consulta
         turno.estudio = null; // Limpiar estudio asociado
+        turno.estadoAtencion = "agendado";
+        turno.enConsultaAt = null;
+        turno.pendienteInformeAt = null;
+        turno.informeCompletadoAt = null;
 
         if (motivo) {
             turno.comentarios = (turno.comentarios || "") + ` [Cancelado previa reserva: ${motivo}]`;
@@ -498,6 +522,16 @@ exports.actualizarTurno = async (req, res) => {
             }
         }
 
+        // Si el turno se libera o queda sin paciente, se reinicia el flujo de atención
+        const sinPaciente =
+            turno.paciente == null && turno.pacienteNoRegistrado == null;
+        if (turno.estado === "disponible" || sinPaciente) {
+            turno.estadoAtencion = "agendado";
+            turno.enConsultaAt = null;
+            turno.pendienteInformeAt = null;
+            turno.informeCompletadoAt = null;
+        }
+
         turno.updated_at = Date.now();
         await turno.save();
 
@@ -575,6 +609,10 @@ exports.limpiarTurnosMasivo = async (req, res) => {
                     pacienteNoRegistrado: null,
                     motivoConsulta: null,
                     estudio: null,
+                    estadoAtencion: "agendado",
+                    enConsultaAt: null,
+                    pendienteInformeAt: null,
+                    informeCompletadoAt: null,
                     updated_at: Date.now()
                 }
             }
@@ -587,5 +625,219 @@ exports.limpiarTurnosMasivo = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Error al limpiar turnos masivamente." });
+    }
+};
+
+// Bandeja diaria de pacientes (citas de hoy + informes pendientes de días anteriores)
+exports.obtenerBandejaDelDia = async (req, res) => {
+    try {
+        const ahora = new Date();
+        const inicioDia = new Date(
+            ahora.getFullYear(),
+            ahora.getMonth(),
+            ahora.getDate(),
+            0, 0, 0, 0
+        );
+        const finDia = new Date(
+            ahora.getFullYear(),
+            ahora.getMonth(),
+            ahora.getDate(),
+            23, 59, 59, 999
+        );
+
+        const filtroDelDia = {
+            fecha: { $gte: inicioDia, $lte: finDia },
+            estado: { $in: ["reservado", "finalizado"] },
+        };
+
+        // Persistencia: los pacientes atendidos con informe pendiente
+        // siguen en la bandeja aunque la cita sea de un día anterior.
+        const filtroPendientes = {
+            estadoAtencion: { $in: ["en_consulta", "pendiente_informe"] },
+            estado: { $in: ["reservado", "finalizado"] },
+        };
+
+        const turnos = await Turno.find({ $or: [filtroDelDia, filtroPendientes] })
+            .populate("doctor", "nombre especialidad")
+            .populate("paciente", "nombre dni telefono email")
+            .populate("estudio", "tipo precio aclaraciones")
+            .sort({ fecha: 1 })
+            .lean();
+
+        const idsPacientes = turnos
+            .filter((turno) => turno.paciente && turno.paciente._id)
+            .map((turno) => turno.paciente._id);
+
+        let primeraFechaPorPaciente = new Map();
+        if (idsPacientes.length > 0) {
+            const primeras = await Turno.aggregate([
+                {
+                    $match: {
+                        paciente: { $in: idsPacientes },
+                        estado: { $in: ["reservado", "finalizado"] },
+                    },
+                },
+                {
+                    $group: {
+                        _id: "$paciente",
+                        primeraFecha: { $min: "$fecha" },
+                    },
+                },
+            ]);
+            primeraFechaPorPaciente = new Map(
+                primeras.map((item) => [
+                    item._id.toString(),
+                    new Date(item.primeraFecha).getTime(),
+                ])
+            );
+        }
+
+        const respuesta = turnos.map((turno) => {
+            const estadoAtencion =
+                turno.estadoAtencion ||
+                (turno.estado === "finalizado"
+                    ? "informe_completado"
+                    : "agendado");
+            const fechaTurno = new Date(turno.fecha);
+            const esDeHoy = fechaTurno >= inicioDia && fechaTurno <= finDia;
+
+            let tipoPaciente = "invitado";
+            if (turno.paciente && turno.paciente._id) {
+                const primeraFecha = primeraFechaPorPaciente.get(
+                    turno.paciente._id.toString()
+                );
+                tipoPaciente =
+                    primeraFecha !== undefined && fechaTurno.getTime() <= primeraFecha
+                        ? "primera_vez"
+                        : "control";
+            }
+
+            return {
+                ...turno,
+                estadoAtencion,
+                esDeHoy,
+                tipoPaciente,
+                esPrimeraVez: tipoPaciente === "primera_vez",
+            };
+        });
+
+        res.status(200).send(respuesta);
+    } catch (error) {
+        console.error("Error al obtener la bandeja del día:", error);
+        res.status(500).send({ message: "Error al obtener la bandeja del día." });
+    }
+};
+
+// Actualizar el estado de atención de una cita (por turno/estudio)
+exports.actualizarEstadoAtencion = async (req, res) => {
+    try {
+        const { turnoId } = req.params;
+        const { estadoAtencion } = req.body;
+
+        if (!ESTADOS_ATENCION.includes(estadoAtencion)) {
+            return res.status(400).send({ message: "Estado de atención inválido." });
+        }
+
+        const turno = await Turno.findById(turnoId);
+        if (!turno) {
+            return res.status(404).send({ message: "Turno no encontrado." });
+        }
+
+        if (!["reservado", "finalizado"].includes(turno.estado)) {
+            return res.status(400).send({
+                message: "El turno no tiene una cita activa para gestionar.",
+            });
+        }
+
+        const estadoAnterior = turno.estadoAtencion;
+        turno.estadoAtencion = estadoAtencion;
+
+        switch (estadoAtencion) {
+            case "agendado":
+                turno.enConsultaAt = null;
+                turno.pendienteInformeAt = null;
+                turno.informeCompletadoAt = null;
+                break;
+            case "en_consulta":
+                turno.enConsultaAt = new Date();
+                turno.pendienteInformeAt = null;
+                turno.informeCompletadoAt = null;
+                break;
+            case "pendiente_informe":
+                turno.enConsultaAt = turno.enConsultaAt || new Date();
+                turno.pendienteInformeAt = new Date();
+                turno.informeCompletadoAt = null;
+                break;
+            case "informe_completado":
+                turno.enConsultaAt = turno.enConsultaAt || new Date();
+                turno.pendienteInformeAt = turno.pendienteInformeAt || new Date();
+                turno.informeCompletadoAt = new Date();
+                break;
+            default:
+                break;
+        }
+
+        // Sincronizar el estado general de la reserva
+        if (estadoAtencion === "informe_completado") {
+            turno.estado = "finalizado";
+        } else if (turno.estado === "finalizado") {
+            turno.estado = "reservado";
+        }
+
+        turno.updated_at = Date.now();
+        await turno.save();
+
+        await turno.populate("doctor", "nombre especialidad");
+        await turno.populate("paciente", "nombre dni telefono email");
+        await turno.populate("estudio", "tipo precio aclaraciones");
+
+        let emailEnviado = false;
+        let emailMotivo = null;
+        let emailOmitidos = [];
+
+        if (
+            estadoAtencion === "informe_completado" &&
+            estadoAnterior !== "informe_completado"
+        ) {
+            if (!turno.paciente || !turno.paciente.email) {
+                emailMotivo = "El paciente no tiene email registrado.";
+            } else {
+                const configCorreo = await getEmailConfig();
+
+                if (!configCorreo) {
+                    emailMotivo = "El servicio de correo no está configurado.";
+                } else {
+                    try {
+                        const pdfs = (turno.archivosAdjuntos || []).filter(esPdf);
+                        const { adjuntos, omitidos } = await prepararAdjuntos(pdfs);
+                        emailOmitidos = omitidos;
+                        emailEnviado = await enviarCorreoInformeListo({
+                            paciente: turno.paciente,
+                            turno,
+                            archivos: adjuntos,
+                        });
+
+                        if (!emailEnviado) {
+                            emailMotivo =
+                                "No se pudo enviar el correo. Verificá la configuración de correo.";
+                        }
+                    } catch (error) {
+                        console.error("Error al enviar correo de informe:", error);
+                        emailMotivo = "Error al preparar o enviar el correo.";
+                    }
+                }
+            }
+        }
+
+        res.status(200).send({
+            message: "Estado de atención actualizado.",
+            turno,
+            emailEnviado,
+            emailMotivo,
+            emailOmitidos,
+        });
+    } catch (error) {
+        console.error("Error al actualizar el estado de atención:", error);
+        res.status(500).send({ message: "Error al actualizar el estado de atención." });
     }
 };

@@ -41,6 +41,15 @@ const TurnoSchema = new Schema({
     enum: ["disponible", "reservado", "cancelado", "finalizado"],
     default: "disponible",
   },
+  // Estado del flujo de atención de la cita (independiente del estado de reserva)
+  estadoAtencion: {
+    type: String,
+    enum: ["agendado", "en_consulta", "pendiente_informe", "informe_completado"],
+    default: "agendado",
+  },
+  enConsultaAt: { type: Date, default: null },
+  pendienteInformeAt: { type: Date, default: null },
+  informeCompletadoAt: { type: Date, default: null },
   comentarios: { type: String },
   motivoConsulta: { type: String },
   created_at: { type: Date, default: Date.now },

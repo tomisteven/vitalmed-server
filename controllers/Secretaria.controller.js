@@ -65,6 +65,19 @@ let s3 = new S3Client({
   },
 });
 
+const obtenerKeyDesdeDocumento = (documento) => {
+  try {
+    if (documento.urlArchivo) {
+      const url = new URL(documento.urlArchivo);
+      const key = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+      if (key) return key;
+    }
+  } catch (error) {
+    console.error("No se pudo obtener la Key desde urlArchivo:", error.message);
+  }
+  return documento.originalFilename;
+};
+
 const eliminarDocumentoDePaciente = async (req, res) => {
   try {
     const { id, idDoc } = req.params;
@@ -87,7 +100,7 @@ const eliminarDocumentoDePaciente = async (req, res) => {
     // Eliminar de S3
     const params = {
       Bucket: "dicom-medical",
-      Key: documento.originalFilename, // O mejor aún: usa Key real si lo guardás
+      Key: obtenerKeyDesdeDocumento(documento),
     };
     const command = new DeleteObjectCommand(params);
     await s3.send(command);
@@ -103,6 +116,143 @@ const eliminarDocumentoDePaciente = async (req, res) => {
   } catch (error) {
     console.error("Error al eliminar documento:", error);
     res.status(500).json({ message: "Error al eliminar documento", ok: false });
+  }
+};
+
+const renombrarCarpetaDePaciente = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const nombreActual = (req.body.nombreActual || "").trim();
+    const nombreNuevo = (req.body.nombreNuevo || "").trim();
+
+    if (!nombreActual || !nombreNuevo) {
+      return res.status(400).json({
+        ok: false,
+        message: "Debe indicar el nombre actual y el nuevo nombre de la carpeta",
+      });
+    }
+
+    if (nombreActual === nombreNuevo) {
+      return res.status(400).json({
+        ok: false,
+        message: "El nuevo nombre debe ser diferente al actual",
+      });
+    }
+
+    const paciente = await Paciente.findById(id);
+    if (!paciente) {
+      return res.status(404).json({ ok: false, message: "Paciente no encontrado" });
+    }
+
+    const archivosCarpeta = paciente.documentos.filter(
+      (doc) => doc.nombreArchivo === nombreActual
+    );
+
+    if (archivosCarpeta.length === 0) {
+      return res.status(404).json({ ok: false, message: "Carpeta no encontrada" });
+    }
+
+    const existeNombreNuevo = paciente.documentos.some(
+      (doc) => doc.nombreArchivo === nombreNuevo
+    );
+
+    if (existeNombreNuevo) {
+      return res.status(400).json({
+        ok: false,
+        message: "Ya existe una carpeta con ese nombre",
+      });
+    }
+
+    // Solo cambia el nombre de la carpeta. No se tocan urlArchivo,
+    // originalFilename ni idArchivo, por lo que los enlaces se mantienen.
+    paciente.documentos.forEach((doc) => {
+      if (doc.nombreArchivo === nombreActual) {
+        doc.nombreArchivo = nombreNuevo;
+      }
+    });
+
+    paciente.updated_at = Date.now();
+    await paciente.save();
+
+    res.json({
+      ok: true,
+      message: "Carpeta renombrada correctamente",
+      nombreActual,
+      nombreNuevo,
+      archivos: archivosCarpeta.length,
+    });
+  } catch (error) {
+    console.error("Error al renombrar carpeta:", error);
+    res.status(500).json({ ok: false, message: "Error al renombrar la carpeta" });
+  }
+};
+
+const eliminarCarpetaDePaciente = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const nombreCarpeta = (req.body.nombreCarpeta || "").trim();
+
+    if (!nombreCarpeta) {
+      return res.status(400).json({
+        ok: false,
+        message: "Debe indicar el nombre de la carpeta a eliminar",
+      });
+    }
+
+    const paciente = await Paciente.findById(id);
+    if (!paciente) {
+      return res.status(404).json({ ok: false, message: "Paciente no encontrado" });
+    }
+
+    const archivosCarpeta = paciente.documentos.filter(
+      (doc) => doc.nombreArchivo === nombreCarpeta
+    );
+
+    if (archivosCarpeta.length === 0) {
+      return res.status(404).json({ ok: false, message: "Carpeta no encontrada" });
+    }
+
+    // Eliminar todos los archivos de la carpeta en S3
+    const resultados = await Promise.allSettled(
+      archivosCarpeta.map(async (doc) => {
+        const key = obtenerKeyDesdeDocumento(doc);
+        if (!key) {
+          throw new Error("No se pudo determinar la Key del archivo");
+        }
+        await s3.send(
+          new DeleteObjectCommand({ Bucket: "dicom-medical", Key: key })
+        );
+      })
+    );
+
+    const erroresS3 = resultados.filter(
+      (resultado) => resultado.status === "rejected"
+    ).length;
+
+    resultados.forEach((resultado, index) => {
+      if (resultado.status === "rejected") {
+        console.error(
+          `Error al eliminar archivo ${archivosCarpeta[index].originalFilename} de S3:`,
+          resultado.reason?.message || resultado.reason
+        );
+      }
+    });
+
+    paciente.documentos = paciente.documentos.filter(
+      (doc) => doc.nombreArchivo !== nombreCarpeta
+    );
+    paciente.updated_at = Date.now();
+    await paciente.save();
+
+    res.json({
+      ok: true,
+      message: "Carpeta eliminada correctamente",
+      archivosEliminados: archivosCarpeta.length,
+      erroresS3,
+    });
+  } catch (error) {
+    console.error("Error al eliminar carpeta:", error);
+    res.status(500).json({ ok: false, message: "Error al eliminar la carpeta" });
   }
 };
 
@@ -319,7 +469,13 @@ const obtenerUrlDescarga = async (req, res) => {
 
 const updateSecretaria = async (req, res) => {
   try {
-    await Secretaria.findByIdAndUpdate(req.params.id, req.body);
+    const datos = { ...req.body };
+
+    if (!String(datos.password || "").trim()) {
+      delete datos.password;
+    }
+
+    await Secretaria.findByIdAndUpdate(req.params.id, datos);
     res.json({ message: "Secretaria actualizada", ok: true });
   } catch (error) {
     res.status(500).json({ message: error.message, ok: false });
@@ -336,4 +492,6 @@ module.exports = {
   updateSecretaria,
   eliminarDocumentoDePaciente,
   subirDocumentoAPaciente2,
+  renombrarCarpetaDePaciente,
+  eliminarCarpetaDePaciente,
 };

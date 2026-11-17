@@ -1,3 +1,6 @@
+const dotenv = require("dotenv");
+dotenv.config();
+
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -11,11 +14,11 @@ const turnos = require("./Routes/Turno.router");
 const estudios = require("./Routes/Estudio.router");
 const logs = require("./Routes/Log.router");
 const historial = require("./Routes/HistorialTurno.router");
+const galeria = require("./Routes/Galeria.router");
+const email = require("./Routes/Email.router");
+const configuracion = require("./Routes/Configuracion.router");
 
 const app = express();
-const dotenv = require("dotenv");
-
-dotenv.config();
 
 // Settings
 app.use(bodyParser.json({ limit: "100mb" }));
@@ -23,31 +26,50 @@ app.use(bodyParser.urlencoded({ limit: "100mb", extended: true }));
 app.use(cookieParser());
 app.use(cors());
 
-// Middleware para registrar logs de errores
+// Middleware para sanitizar respuestas y registrar logs de errores
 const Log = require('./models/Log');
+const { sanitizar } = require('./utils/sanitizar');
+
 app.use((req, res, next) => {
   const originalJson = res.json;
-  
+  const originalSend = res.send;
+
   res.json = function (body) {
+    const respuesta = sanitizar(body);
+
     if (res.statusCode >= 400) {
       Log.create({
         metodo: req.method,
         ruta: req.originalUrl,
-        body: req.body,
-        query: req.query,
-        params: req.params,
+        body: sanitizar(req.body),
+        query: sanitizar(req.query),
+        params: sanitizar(req.params),
         status: res.statusCode,
-        mensajeError: body ? (body.message || JSON.stringify(body)) : "Error desconocido",
+        mensajeError: respuesta
+          ? respuesta.message || JSON.stringify(respuesta)
+          : "Error desconocido",
         ip: req.ip
       }).catch(err => console.error("Error al guardar log:", err));
     }
-    return originalJson.apply(res, arguments);
+
+    return originalJson.call(this, respuesta);
   };
+
+  res.send = function (body) {
+    const respuesta =
+      body && typeof body === "object" && !Buffer.isBuffer(body)
+        ? sanitizar(body)
+        : body;
+
+    return originalSend.call(this, respuesta);
+  };
+
   next();
 });
 
 // Servir archivos estáticos
 app.use(express.static(__dirname + "/uploads"));
+app.use("/uploads", express.static(__dirname + "/uploads"));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
@@ -68,6 +90,9 @@ app.use("/api", turnos);
 app.use("/api", estudios);
 app.use("/api", logs);
 app.use("/api", historial);
+app.use("/api", galeria);
+app.use("/api", email);
+app.use("/api", configuracion);
 app.use("/auth", sistema);
 
 module.exports = app;

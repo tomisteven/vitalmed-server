@@ -14,7 +14,9 @@ const {
   obtenerUrlDescarga,
   updateSecretaria,
   eliminarDocumentoDePaciente,
-  subirDocumentoAPaciente2
+  subirDocumentoAPaciente2,
+  renombrarCarpetaDePaciente,
+  eliminarCarpetaDePaciente
 } = require("../controllers/Secretaria.controller.js");
 
 const router = Router();
@@ -28,6 +30,18 @@ router.post(
   "/secretaria/:id/subir",
   [asureAuth, md_upload],
   subirDocumentoAPaciente2
+);
+
+router.patch(
+  "/secretaria/:id/carpeta/renombrar",
+  asureAuth,
+  renombrarCarpetaDePaciente
+);
+
+router.delete(
+  "/secretaria/:id/carpeta",
+  asureAuth,
+  eliminarCarpetaDePaciente
 );
 
 router.delete(

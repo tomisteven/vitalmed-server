@@ -27,6 +27,12 @@ router.delete("/turnos/:turnoId/archivo/:archivoId", TurnoController.eliminarArc
 // Cancelar turno
 router.put("/turnos/cancelar/:turnoId", TurnoController.cancelarTurno);
 
+// Bandeja diaria de pacientes (citas de hoy + informes pendientes)
+router.get("/turnos/bandeja-hoy", TurnoController.obtenerBandejaDelDia);
+
+// Actualizar el estado de atención de una cita
+router.patch("/turnos/:turnoId/estado-atencion", TurnoController.actualizarEstadoAtencion);
+
 // Obtener turnos (con filtros query params)
 router.get("/turnos", TurnoController.obtenerTurnos);
 

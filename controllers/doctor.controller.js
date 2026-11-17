@@ -82,7 +82,13 @@ const verDoctor = async (req, res) => {
 // Actualizar un doctor
 const updateDoctor = async (req, res) => {
   try {
-    const doctor = await Doctor.findByIdAndUpdate(req.params.id, req.body, {
+    const datos = { ...req.body };
+
+    if (!String(datos.password || "").trim()) {
+      delete datos.password;
+    }
+
+    const doctor = await Doctor.findByIdAndUpdate(req.params.id, datos, {
       new: true,
       runValidators: true,
     });
