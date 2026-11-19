@@ -1,6 +1,7 @@
 const Turno = require("../models/Turno");
 const Doctor = require("../models/Doctor");
 const Paciente = require("../models/Paciente");
+const Estudio = require("../models/Estudio");
 const {
     enviarCorreoConfirmacion,
     enviarCorreoInformeListo,
@@ -151,6 +152,112 @@ exports.reservarTurno = async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Error al reservar turno." });
+    }
+};
+
+// Registrar una visita sin turno para un paciente ya registrado.
+// Se usa cuando el paciente llega al consultorio sin una cita previa.
+exports.crearVisitaSinTurno = async (req, res) => {
+    try {
+        const {
+            pacienteId,
+            estudioId,
+            doctorId,
+            motivoConsulta,
+            estadoAtencion = "en_consulta",
+        } = req.body;
+
+        if (!pacienteId) {
+            return res.status(400).send({
+                message: "Se requiere el ID del paciente.",
+            });
+        }
+
+        if (!ESTADOS_ATENCION.includes(estadoAtencion)) {
+            return res.status(400).send({
+                message: "Estado de atención inválido.",
+            });
+        }
+
+        const paciente = await Paciente.findById(pacienteId);
+        if (!paciente) {
+            return res.status(404).send({ message: "Paciente no encontrado." });
+        }
+
+        const doctor = doctorId
+            ? await Doctor.findById(doctorId)
+            : await Doctor.findOne().sort({ created_at: 1 });
+
+        if (!doctor) {
+            return res.status(400).send({
+                message: "No hay un doctor disponible para registrar la visita.",
+            });
+        }
+
+        let estudio = null;
+        if (estudioId) {
+            estudio = await Estudio.findById(estudioId);
+            if (!estudio) {
+                return res.status(404).send({ message: "Estudio no encontrado." });
+            }
+        }
+
+        const ahora = new Date();
+        const visitaCompletada = estadoAtencion === "informe_completado";
+        const visitaPendiente = ["pendiente_informe", "informe_completado"].includes(
+            estadoAtencion
+        );
+
+        const turno = new Turno({
+            fecha: ahora,
+            doctor: doctor._id,
+            paciente: paciente._id,
+            estudio: estudio?._id || null,
+            especialidad: doctor.especialidad,
+            estado: visitaCompletada ? "finalizado" : "reservado",
+            estadoAtencion,
+            esVisitaEspontanea: true,
+            motivoConsulta:
+                String(motivoConsulta || "").trim() || "Visita sin turno",
+            enConsultaAt: estadoAtencion === "agendado" ? null : ahora,
+            pendienteInformeAt: visitaPendiente ? ahora : null,
+            informeCompletadoAt: visitaCompletada ? ahora : null,
+            created_at: ahora,
+            updated_at: ahora,
+        });
+
+        await turno.save();
+
+        try {
+            const historial = new HistorialTurno({
+                turnoId: turno._id,
+                pacienteId: paciente._id,
+                nombreCompleto: paciente.nombre,
+                telefono: paciente.telefono || "Sin teléfono",
+                dni: paciente.dni || "",
+                doctor: doctor.nombre,
+                especialidad: turno.especialidad || doctor.especialidad,
+                fechaTurno: ahora,
+                creadoPor: "admin_secretaria",
+            });
+            await historial.save();
+        } catch (historialError) {
+            console.error(
+                "No se pudo guardar el historial de la visita sin turno:",
+                historialError.message
+            );
+        }
+
+        res.status(201).send({
+            ok: true,
+            message: "Visita sin turno registrada correctamente.",
+            turno,
+        });
+    } catch (error) {
+        console.error("Error al registrar visita sin turno:", error);
+        res.status(500).send({
+            message: "Error al registrar la visita sin turno.",
+        });
     }
 };
 
@@ -628,6 +735,71 @@ exports.limpiarTurnosMasivo = async (req, res) => {
     }
 };
 
+const construirTurnosBandeja = async (turnos, inicioDia, finDia) => {
+    const idsPacientes = turnos
+        .filter((turno) => turno.paciente && turno.paciente._id)
+        .map((turno) => turno.paciente._id)
+        .filter(
+            (id, index, array) =>
+                array.findIndex((otro) => otro.toString() === id.toString()) ===
+                index
+        );
+
+    let primeraFechaPorPaciente = new Map();
+    if (idsPacientes.length > 0) {
+        const primeras = await Turno.aggregate([
+            {
+                $match: {
+                    paciente: { $in: idsPacientes },
+                    estado: { $in: ["reservado", "finalizado"] },
+                },
+            },
+            {
+                $group: {
+                    _id: "$paciente",
+                    primeraFecha: { $min: "$fecha" },
+                },
+            },
+        ]);
+        primeraFechaPorPaciente = new Map(
+            primeras.map((item) => [
+                item._id.toString(),
+                new Date(item.primeraFecha).getTime(),
+            ])
+        );
+    }
+
+    return turnos.map((turno) => {
+        const estadoAtencion =
+            turno.estadoAtencion ||
+            (turno.estado === "finalizado"
+                ? "informe_completado"
+                : "agendado");
+        const fechaTurno = new Date(turno.fecha);
+        const esDeHoy = fechaTurno >= inicioDia && fechaTurno <= finDia;
+
+        let tipoPaciente = "invitado";
+        if (turno.paciente && turno.paciente._id) {
+            const primeraFecha = primeraFechaPorPaciente.get(
+                turno.paciente._id.toString()
+            );
+            tipoPaciente =
+                primeraFecha !== undefined &&
+                fechaTurno.getTime() <= primeraFecha
+                    ? "primera_vez"
+                    : "control";
+        }
+
+        return {
+            ...turno,
+            estadoAtencion,
+            esDeHoy,
+            tipoPaciente,
+            esPrimeraVez: tipoPaciente === "primera_vez",
+        };
+    });
+};
+
 // Bandeja diaria de pacientes (citas de hoy + informes pendientes de días anteriores)
 exports.obtenerBandejaDelDia = async (req, res) => {
     try {
@@ -664,67 +836,71 @@ exports.obtenerBandejaDelDia = async (req, res) => {
             .sort({ fecha: 1 })
             .lean();
 
-        const idsPacientes = turnos
-            .filter((turno) => turno.paciente && turno.paciente._id)
-            .map((turno) => turno.paciente._id);
-
-        let primeraFechaPorPaciente = new Map();
-        if (idsPacientes.length > 0) {
-            const primeras = await Turno.aggregate([
-                {
-                    $match: {
-                        paciente: { $in: idsPacientes },
-                        estado: { $in: ["reservado", "finalizado"] },
-                    },
-                },
-                {
-                    $group: {
-                        _id: "$paciente",
-                        primeraFecha: { $min: "$fecha" },
-                    },
-                },
-            ]);
-            primeraFechaPorPaciente = new Map(
-                primeras.map((item) => [
-                    item._id.toString(),
-                    new Date(item.primeraFecha).getTime(),
-                ])
-            );
-        }
-
-        const respuesta = turnos.map((turno) => {
-            const estadoAtencion =
-                turno.estadoAtencion ||
-                (turno.estado === "finalizado"
-                    ? "informe_completado"
-                    : "agendado");
-            const fechaTurno = new Date(turno.fecha);
-            const esDeHoy = fechaTurno >= inicioDia && fechaTurno <= finDia;
-
-            let tipoPaciente = "invitado";
-            if (turno.paciente && turno.paciente._id) {
-                const primeraFecha = primeraFechaPorPaciente.get(
-                    turno.paciente._id.toString()
-                );
-                tipoPaciente =
-                    primeraFecha !== undefined && fechaTurno.getTime() <= primeraFecha
-                        ? "primera_vez"
-                        : "control";
-            }
-
-            return {
-                ...turno,
-                estadoAtencion,
-                esDeHoy,
-                tipoPaciente,
-                esPrimeraVez: tipoPaciente === "primera_vez",
-            };
-        });
+        const respuesta = await construirTurnosBandeja(
+            turnos,
+            inicioDia,
+            finDia
+        );
 
         res.status(200).send(respuesta);
     } catch (error) {
         console.error("Error al obtener la bandeja del día:", error);
         res.status(500).send({ message: "Error al obtener la bandeja del día." });
+    }
+};
+
+// Bandeja paralela: todos los pacientes que concurrieron a una cita,
+// sin importar la fecha, para consultar y cambiar su estado de atención.
+exports.obtenerBandejaAtendidos = async (req, res) => {
+    try {
+        const ahora = new Date();
+        const inicioDia = new Date(
+            ahora.getFullYear(),
+            ahora.getMonth(),
+            ahora.getDate(),
+            0, 0, 0, 0
+        );
+        const finDia = new Date(
+            ahora.getFullYear(),
+            ahora.getMonth(),
+            ahora.getDate(),
+            23, 59, 59, 999
+        );
+
+        const turnos = await Turno.find({
+            estado: { $in: ["reservado", "finalizado"] },
+            $or: [
+                {
+                    estadoAtencion: {
+                        $in: [
+                            "en_consulta",
+                            "pendiente_informe",
+                            "informe_completado",
+                        ],
+                    },
+                },
+                { estadoAtencion: { $exists: false }, estado: "finalizado" },
+                { estadoAtencion: null, estado: "finalizado" },
+            ],
+        })
+            .populate("doctor", "nombre especialidad")
+            .populate("paciente", "nombre dni telefono email")
+            .populate("estudio", "tipo precio aclaraciones")
+            .sort({ fecha: -1 })
+            .lean();
+
+        const respuesta = await construirTurnosBandeja(
+            turnos,
+            inicioDia,
+            finDia
+        );
+
+        res.status(200).send(respuesta);
+    } catch (error) {
+        console.error("Error al obtener la bandeja de atendidos:", error);
+        res.status(500).send({
+            message: "Error al obtener la bandeja de pacientes atendidos.",
+        });
     }
 };
 

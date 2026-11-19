@@ -47,6 +47,8 @@ const TurnoSchema = new Schema({
     enum: ["agendado", "en_consulta", "pendiente_informe", "informe_completado"],
     default: "agendado",
   },
+  // Visitas registradas desde la bandeja sin un turno agendado previamente
+  esVisitaEspontanea: { type: Boolean, default: false },
   enConsultaAt: { type: Date, default: null },
   pendienteInformeAt: { type: Date, default: null },
   informeCompletadoAt: { type: Date, default: null },
